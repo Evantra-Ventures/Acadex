@@ -114,7 +114,7 @@
       if (!dbProgramId) dbProgramId = "informationtechnology";
 
       const currentLevel =
-        currentUser.current_level || currentUser.level || 100;
+        parseInt(currentUser.currentLevel || currentUser.current_level || currentUser.level, 10) || 100;
 
       const masterUrl = `/api/resources?master=true&programId=${encodeURIComponent(dbProgramId)}&level=${encodeURIComponent(currentLevel)}`;
       const masterData = await apiFetch(masterUrl);

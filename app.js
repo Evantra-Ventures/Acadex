@@ -389,6 +389,7 @@ app.post("/api/login", async (req, res) => {
       is_rep: !!user.is_rep,
       is_leader: !!user.is_leader,
       is_creator: !!user.is_creator,
+      currentLevel: user.current_level || 100,
     };
 
     // Role-based redirect hint
@@ -742,8 +743,24 @@ app.post("/api/logout", (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-app.get("/api/session", (req, res) => {
+app.get("/api/session", async (req, res) => {
   if (!req.session.user) return res.status(401).json({ ok: false });
+  try {
+    // Always serve the live level from the DB so the Master Vault follows promotions
+    const { rows } = await db.pool.query(
+      "SELECT current_level, is_rep, is_leader, is_creator, role FROM users_app WHERE id = $1 LIMIT 1",
+      [req.session.user.id],
+    );
+    if (rows.length > 0) {
+      req.session.user.currentLevel = rows[0].current_level || req.session.user.currentLevel || 100;
+      req.session.user.is_rep = !!rows[0].is_rep;
+      req.session.user.is_leader = !!rows[0].is_leader;
+      req.session.user.is_creator = !!rows[0].is_creator;
+      req.session.user.role = rows[0].role;
+    }
+  } catch (e) {
+    console.error("Session refresh error:", e.message);
+  }
   return res.json({ ok: true, user: req.session.user });
 });
 

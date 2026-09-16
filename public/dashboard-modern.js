@@ -82,7 +82,7 @@
         dbProgramId = "informationtechnology";
       }
 
-      const currentLevel = u.current_level || u.level || 100;
+      const currentLevel = parseInt(u.currentLevel || u.current_level || u.level, 10) || 100;
 
       const masterUrl = `/api/resources?master=true&programId=${encodeURIComponent(dbProgramId)}&level=${encodeURIComponent(currentLevel)}`;
       const masterData = await apiFetch(masterUrl);
