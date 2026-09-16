@@ -1479,7 +1479,8 @@ app.get("/api/forum", async (req, res) => {
       params.push(u.programId);
     } else if (target === "class" && u) {
       query += ` AND p.target_id = $2`;
-      params.push(u.classId);
+      // Session stores classGroupId (NOT classId)
+      params.push(u.classGroupId || u.class_group_id);
     }
 
     query += ` ORDER BY p.created_at DESC`;
@@ -1513,9 +1514,9 @@ app.post(
 
       // 2. Update the columns matching your users_app schema
       const query = `
-            UPDATE users_app 
-            SET bio = $1, is_rep = $2, is_leader = $3, is_creator = $4, role = $5 
-            WHERE id = $6 
+            UPDATE users_app
+            SET bio = $1, is_rep = $2, is_leader = $3, is_creator = $4, role = $5
+            WHERE id = $6
             RETURNING id, role
         `;
       const values = [
@@ -1587,7 +1588,7 @@ app.post("/api/notifications/unsubscribe", async (req, res) => {
 app.get("/api/admin/forum/posts", requireAdmin, async (req, res) => {
   try {
     const query = `
-      SELECT p.*, u.full_name as user_name 
+      SELECT p.*, u.full_name as user_name
       FROM forum_posts p
       LEFT JOIN users_app u ON p.user_id = u.id
       ORDER BY p.created_at DESC
@@ -1622,21 +1623,30 @@ app.post("/api/forum", async (req, res) => {
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
+    // Fall back to the poster's own cohort when the form didn't send a target_id,
+    // otherwise program/class posts are stored with NULL and never appear in feeds.
+    const finalTargetId =
+      target_id ||
+      (target_type === "program" ? u.programId : null) ||
+      (target_type === "class" ? u.classGroupId || u.class_group_id : null);
+
     const vals = [
       u.id,
       content,
       target_type || "global",
-      target_id || null,
-      u.institutionId,
+      finalTargetId,
+      u.institutionId || u.institution_id,
     ];
     const { rows } = await db.pool.query(query, vals);
 
     // Trigger Notification
+    // NOTE: 'institution' is not a valid target_type (DB check constraint allows
+    // only class/program/global), so it can never occur on a stored post.
     const notifyCriteria =
       target_type === "program"
-        ? { type: "program", id: target_id || u.programId }
-        : target_type === "institution"
-          ? { type: "institution", id: target_id || u.institutionId }
+        ? { type: "program", id: finalTargetId || u.programId }
+        : target_type === "class"
+          ? { type: "program", id: u.programId } // push at program level for class posts
           : { type: "all" };
 
     notifyTargetGroup(
@@ -1681,11 +1691,13 @@ app.get("/api/announcements", async (req, res) => {
     const u = req.session.user;
 
     // Fetch announcements that are EITHER global, for their institution, OR for their program
+    // (NULL targets on a non-global announcement are treated as "everyone")
     const query = `
       SELECT a.*, u.full_name as author_name, u.role as author_role
       FROM announcements a
       LEFT JOIN users_app u ON a.author_id = u.id
-      WHERE a.is_global = true 
+      WHERE a.is_global = true
+      OR (a.target_institution IS NULL AND a.target_program IS NULL)
       ${u ? "OR a.target_institution = $1 OR a.target_program = $2" : ""}
       ORDER BY a.created_at DESC
     `;

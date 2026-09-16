@@ -59,7 +59,7 @@
       const raw = u.fullName || u.full_name || u.name || u.username || u.studentId || "Student";
       const firstName = u.firstName || u.first_name || String(raw).trim().split(/\s+/)[0] || "Student";
 
-      const profileNameEls = document.querySelectorAll(".sidebar .fw-bold, #profileName, .user-name, #repWelcomeName, #user-firstname");
+      const profileNameEls = document.querySelectorAll(".sidebar .fw-bold, #profileName, .user-name, #repWelcomeName, #user-firstname, #welcomeStudentName");
       profileNameEls.forEach(el => {
          el.textContent = firstName;
       });

@@ -72,7 +72,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       list.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>`;
 
       const data = await window.api.fetch("/api/announcements");
-      const items = data.announcements || [];
+      // The API returns a plain array; be defensive in case it ever wraps it.
+      const items = Array.isArray(data) ? data : data.announcements || [];
 
       if (badge) badge.textContent = `${items.length} Updates`;
 
