@@ -1145,7 +1145,7 @@ app.get("/api/resources", async (req, res) => {
     const { courseId, master, programId, level } = req.query;
 
     let query = `
-      SELECT DISTINCT 
+      SELECT 
         r.id,
         r.title,
         r.description,
@@ -1214,19 +1214,16 @@ app.get("/api/resources", async (req, res) => {
           null;
       }
 
-      // Enforce student program alignment safely
+      // Enforce clean program alignment using an IN subquery (prevents row duplication)
       if (scopedProgramId) {
         queryParams.push(String(scopedProgramId));
         const pIdx = queryParams.length;
         query += `
         AND (
           r.program_id = $${pIdx}
-          OR (
-            r.course_id IS NOT NULL
-            AND EXISTS (
-              SELECT 1 FROM program_courses pc
-              WHERE pc.course_id = r.course_id AND pc.program_id = $${pIdx}
-            )
+          OR r.course_id IN (
+            SELECT pc.course_id FROM program_courses pc 
+            WHERE pc.program_id = $${pIdx}
           )
         )`;
       }
@@ -1249,19 +1246,6 @@ app.get("/api/resources", async (req, res) => {
     res
       .status(500)
       .json({ ok: false, message: "Failed to fetch library resources" });
-  }
-});
-
-// PATCH /api/resources/:id/view - Increments view count
-app.patch("/api/resources/:id/view", async (req, res) => {
-  try {
-    await db.pool.query(
-      "UPDATE resources SET view_count = view_count + 1 WHERE id = $1",
-      [req.params.id],
-    );
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false });
   }
 });
 
