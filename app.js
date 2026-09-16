@@ -1182,15 +1182,52 @@ app.get("/api/resources", async (req, res) => {
       // Enforce strict master compilation filtering
       query += ` AND (r.is_master_compiled = true OR r.is_master_compiled = 'true')`;
 
-      // Enforce student program alignment
-      if (programId) {
-        queryParams.push(programId);
+      // SECURITY: Never trust client-sent program/level. Resolve them from the
+      // logged-in user's DB row so students only ever see THEIR program's vault.
+      let scopedProgramId = null;
+      let scopedLevel = null;
+      if (req.session && req.session.user && req.session.user.id) {
+        try {
+          const { rows: uRows } = await db.pool.query(
+            "SELECT program_id, current_level FROM users_app WHERE id = $1 LIMIT 1",
+            [req.session.user.id],
+          );
+          if (uRows.length > 0) {
+            scopedProgramId = uRows[0].program_id || null;
+            scopedLevel = uRows[0].current_level || null;
+          }
+        } catch (ue) {
+          console.error("Vault scope lookup error:", ue.message);
+        }
+      }
+
+      // Fallback to session values if DB row is missing for some reason
+      if (!scopedProgramId) {
+        scopedProgramId =
+          (req.session &&
+            req.session.user &&
+            (req.session.user.programId || req.session.user.program_id)) ||
+          programId ||
+          null;
+      }
+      if (!scopedLevel) {
+        scopedLevel =
+          (req.session &&
+            req.session.user &&
+            (req.session.user.currentLevel || req.session.user.current_level)) ||
+          level ||
+          null;
+      }
+
+      // Enforce student program alignment (MANDATORY for master vault)
+      if (scopedProgramId) {
+        queryParams.push(String(scopedProgramId));
         query += ` AND r.program_id = $${queryParams.length}`;
       }
 
-      // Enforce student level alignment
-      if (level) {
-        queryParams.push(parseInt(level, 10) || 100);
+      // Enforce student level alignment (MANDATORY for master vault)
+      if (scopedLevel) {
+        queryParams.push(parseInt(scopedLevel, 10) || 100);
         query += ` AND r.level = $${queryParams.length}`;
       }
     } else {
