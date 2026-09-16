@@ -1219,10 +1219,23 @@ app.get("/api/resources", async (req, res) => {
           null;
       }
 
-      // Enforce student program alignment (MANDATORY for master vault)
+      // Enforce student program alignment (MANDATORY for master vault).
+      // A resource belongs to the student's program if its program_id matches
+      // directly OR its course is part of the program's curriculum (program_courses).
       if (scopedProgramId) {
         queryParams.push(String(scopedProgramId));
-        query += ` AND r.program_id = $${queryParams.length}`;
+        const pIdx = queryParams.length;
+        query += `
+        AND (
+          r.program_id = $${pIdx}
+          OR (
+            r.course_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM program_courses pc
+              WHERE pc.course_id = r.course_id AND pc.program_id = $${pIdx}
+            )
+          )
+        )`;
       }
 
       // Enforce student level alignment (MANDATORY for master vault)
