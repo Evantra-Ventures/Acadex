@@ -1140,13 +1140,12 @@ app.get("/api/categories", async (req, res) => {
   }
 });
 
-// GET /api/resources - Contextual routing for master vault & marketplace grids
 app.get("/api/resources", async (req, res) => {
   try {
     const { courseId, master, programId, level } = req.query;
 
     let query = `
-      SELECT 
+      SELECT DISTINCT 
         r.id,
         r.title,
         r.description,
@@ -1171,7 +1170,7 @@ app.get("/api/resources", async (req, res) => {
 
     const queryParams = [];
 
-    // 1. Optional Course Filter (Used heavily by the course list selection layout)
+    // 1. Optional Course Filter
     if (courseId) {
       queryParams.push(courseId);
       query += ` AND r.course_id = $${queryParams.length}`;
@@ -1179,11 +1178,8 @@ app.get("/api/resources", async (req, res) => {
 
     // 2. Structural Split: Master Vault Context vs. General Marketplace
     if (master === "true") {
-      // Enforce strict master compilation filtering
       query += ` AND (r.is_master_compiled = true OR r.is_master_compiled = 'true')`;
 
-      // SECURITY: Never trust client-sent program/level. Resolve them from the
-      // logged-in user's DB row so students only ever see THEIR program's vault.
       let scopedProgramId = null;
       let scopedLevel = null;
       if (req.session && req.session.user && req.session.user.id) {
@@ -1201,7 +1197,6 @@ app.get("/api/resources", async (req, res) => {
         }
       }
 
-      // Fallback to session values if DB row is missing for some reason
       if (!scopedProgramId) {
         scopedProgramId =
           (req.session &&
@@ -1219,9 +1214,7 @@ app.get("/api/resources", async (req, res) => {
           null;
       }
 
-      // Enforce student program alignment (MANDATORY for master vault).
-      // A resource belongs to the student's program if its program_id matches
-      // directly OR its course is part of the program's curriculum (program_courses).
+      // Enforce student program alignment safely
       if (scopedProgramId) {
         queryParams.push(String(scopedProgramId));
         const pIdx = queryParams.length;
@@ -1238,22 +1231,18 @@ app.get("/api/resources", async (req, res) => {
         )`;
       }
 
-      // Enforce student level alignment (MANDATORY for master vault)
+      // Enforce student level alignment
       if (scopedLevel) {
         queryParams.push(parseInt(scopedLevel, 10) || 100);
         query += ` AND r.level = $${queryParams.length}`;
       }
     } else {
-      // Marketplace logic: Hide master-compiled tracks completely to isolate standard submissions
       query += ` AND (r.is_master_compiled = false OR r.is_master_compiled IS NULL)`;
     }
 
-    // Append standard descending sorting order
     query += ` ORDER BY r.created_at DESC`;
 
     const { rows } = await db.pool.query(query, queryParams);
-
-    // Returns response envelope that perfectly bridges dashboard-modern.js and resources.js
     res.json({ resources: rows });
   } catch (e) {
     console.error("Backend resource extraction error:", e);
