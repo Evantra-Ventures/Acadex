@@ -1214,7 +1214,7 @@ app.get("/api/resources", async (req, res) => {
           null;
       }
 
-      // Enforce clean program alignment using an IN subquery (prevents row duplication)
+      // Enforce clean program alignment with strict distinct course subquery mapping
       if (scopedProgramId) {
         queryParams.push(String(scopedProgramId));
         const pIdx = queryParams.length;
@@ -1222,7 +1222,7 @@ app.get("/api/resources", async (req, res) => {
         AND (
           r.program_id = $${pIdx}
           OR r.course_id IN (
-            SELECT pc.course_id FROM program_courses pc 
+            SELECT DISTINCT pc.course_id FROM program_courses pc 
             WHERE pc.program_id = $${pIdx}
           )
         )`;
@@ -1237,9 +1237,18 @@ app.get("/api/resources", async (req, res) => {
       query += ` AND (r.is_master_compiled = false OR r.is_master_compiled IS NULL)`;
     }
 
-    query += ` ORDER BY r.created_at DESC`;
+    // Wrap final output selection in a outer layer with GROUP BY / DISTINCT to guarantee 0 repeats
+    const finalWrappedQuery = `
+      SELECT DISTINCT ON (sub.id) sub.* 
+      FROM (${query} ORDER BY r.created_at DESC) sub
+      ORDER BY sub.id, sub.created_at DESC
+    `;
 
-    const { rows } = await db.pool.query(query, queryParams);
+    const { rows } = await db.pool.query(finalWrappedQuery, queryParams);
+    
+    // Sort cleanly newest-first
+    rows.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
     res.json({ resources: rows });
   } catch (e) {
     console.error("Backend resource extraction error:", e);
